@@ -57,7 +57,7 @@ def main():
     # --- Header ---
     st.html("""<h1 style="text-align: center; color: #6ca395;">🤖 <i>Thuto The Tutor</i> 💬</h1>""")
     #st.write("Ekurhuleni Map")
-    image = Image.open("C:/Users/Zama/Desktop/cropped-webq-2048x432.png")  # Replace with your image path
+    image = Image.open("cropped-webq-2048x432.png")  # Replace with your image path
     st.image(image, use_column_width=True)
     # --- Side Bar ---
     with st.sidebar:
@@ -75,7 +75,7 @@ def main():
         with st.sidebar:
             st.write("#")
             st.write("#")
-            st.video("C:/Users/Zama/Downloads/EQ.mp4")
+            st.video("EQ.mp4")
             st.write("📋[Stemperiodt Blog](https://stemperiodt.co.za/blog/)")
 
     else:
@@ -194,7 +194,7 @@ def main():
                 audio_prompt = transcript.text
 
             st.divider()
-            st.video("C:/Users/Zama/Downloads/EQ.mp4")
+            st.video("EQ.mp4")
             st.write("📋[Stemperiodt Blog](https://stemperiodt.co.za/blog/)")
 
 
