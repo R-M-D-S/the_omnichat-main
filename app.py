@@ -216,9 +216,9 @@ def main():
                 st.markdown(prompt)
 
             with st.chat_message("assistant"):
-                st.latex(st.write_stream(
+                st.write_stream(
                     stream_llm_response(client, model_params)
-                ))
+                )
 
             # --- Added Audio Response (optional) ---
             if audio_response:
