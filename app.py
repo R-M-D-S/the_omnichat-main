@@ -47,6 +47,11 @@ def get_image_base64(image_raw):
 
 def main():
 
+    hide_github_icon = """
+    #GithubIcon {visibility: hidden;}
+    """
+    st.markdown(hide_github_icon, unsafe_allow_html=True)
+    
     # --- Page Config ---
     st.set_page_config(
         page_title="Thuto The Tutor",
