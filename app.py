@@ -2,6 +2,7 @@ import streamlit as st
 from openai import OpenAI
 import dotenv
 import os
+import re
 from PIL import Image
 from audio_recorder_streamlit import audio_recorder
 import base64
@@ -206,7 +207,7 @@ def main():
                     "role": "user", 
                     "content": [{
                         "type": "text",
-                        "text": prompt or audio_prompt,
+                        "text": f"Answer the following question: {prompt}. Ensure your response is in LaTex format with expressions wrapped in $" or f"Answer the following question: {audio_prompt}. Ensure your response is in LaTex format with expressions wrapped in $",
                     }]
                 }
             )
@@ -216,9 +217,22 @@ def main():
                 st.markdown(prompt)
 
             with st.chat_message("assistant"):
-                st.write_stream(
-                    stream_llm_response(client, model_params)
-                )
+                latex_output = ""
+                for chunk in stream_llm_response(client, model_params):
+                    latex_output += chunk
+                
+                def preprocess_latex(latex_text):
+                    # Remove display mode delimiters
+                    #latex_text = re.sub(r'\$\$(.+?)\$\$', r'\1', latex_text, flags=re.DOTALL)
+                    # Remove inline mode delimiters
+                    #latex_text = re.sub(r'\$(.+?)\$', r'\1', latex_text, flags=re.DOTALL)
+                    # Remove \( \) delimiters
+                    latex_text = re.sub(r'\\\((.+?)\\\)', r'\1', latex_text, flags=re.DOTALL)
+                    # Remove \[ \] delimiters
+                    latex_text = re.sub(r'\\\[(.+?)\\\]', r'\1', latex_text, flags=re.DOTALL)
+                    return latex_text
+                latex = preprocess_latex(latex_output)
+                st.markdown(latex)
 
             # --- Added Audio Response (optional) ---
             if audio_response:
