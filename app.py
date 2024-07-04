@@ -207,7 +207,7 @@ def main():
                     "role": "user", 
                     "content": [{
                         "type": "text",
-                        "text": f"Answer the following question: {prompt}. Ensure your response is in LaTex format with expressions wrapped in $" or f"Answer the following question: {audio_prompt}. Ensure your response is in LaTex format with expressions wrapped in $",
+                        "text": f"Answer the following question: {prompt}. Instruction: Ensure your response is in LaTex format with expressions wrapped in $" or f"Answer the following question: {audio_prompt}. Instruction: Ensure your response is in LaTex format with expressions wrapped in $",
                     }]
                 }
             )
