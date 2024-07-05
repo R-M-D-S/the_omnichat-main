@@ -108,7 +108,7 @@ def main():
             ], index=0)
             
             with st.popover("⚙️ Model parameters"):
-                model_temp = st.slider("Temperature", min_value=0.0, max_value=2.0, value=0.3, step=0.1)
+                model_temp = st.slider("Temperature", min_value=0.0, max_value=2.0, value=0.0, step=0.1)
 
             audio_response = st.toggle("Audio response", value=False)
             if audio_response:
@@ -207,7 +207,7 @@ def main():
                     "role": "user", 
                     "content": [{
                         "type": "text",
-                        "text": f"Answer the following question: {prompt}. Instruction: Ensure your response is in LaTex format with expressions wrapped in the following: $" or f"Answer the following question: {audio_prompt}. Instruction: Ensure your response is in LaTex format with expressions wrapped in the following: $",
+                        "text": f"Answer the following question: {prompt}. Instruction: Ensure your response is in LaTex format with mathematical expressions wrapped in the following: $" or f"Answer the following question: {audio_prompt}. Instruction: Ensure your response is in LaTex format with mathematical expressions wrapped in the following: $",
                     }]
                 }
             )
