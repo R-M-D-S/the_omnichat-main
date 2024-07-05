@@ -207,7 +207,7 @@ def main():
                     "role": "user", 
                     "content": [{
                         "type": "text",
-                        "text": f"Answer the following question: {prompt}. Instruction: Ensure your response is in LaTex format with mathematical and latex expressions wrapped in the following: $" or f"Answer the following question: {audio_prompt}. Instruction: Ensure your response is in LaTex format with mathematical and latex expressions wrapped in the following: $",
+                        "text": f"Answer the following question: {prompt}. Instruction: Please ensure inline mathematical expressions are wrapped in single dollar signs ($) and all display mathematical expressions are wrapped in double dollar signs ($$)." or f"Answer the following question: {audio_prompt}. Instruction: Please ensure inline mathematical expressions are wrapped in single dollar signs ($) and all display mathematical expressions are wrapped in double dollar signs ($$).",
                     }]
                 }
             )
