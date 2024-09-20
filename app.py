@@ -97,7 +97,7 @@ def main():
         st.divider()
 
         model = st.selectbox("Select a model:", [
-            "gpt-4o-2024-05-13", 
+            "chatgpt-4o-latest", 
             "gpt-4-turbo", 
             "gpt-3.5-turbo-16k", 
             "gpt-4", 
