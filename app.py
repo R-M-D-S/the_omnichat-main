@@ -27,18 +27,9 @@ def extract_content_from_pdf(pdf_file):
             base_image = doc.extract_image(xref)
             image_bytes = base_image["image"]
             img = Image.open(BytesIO(image_bytes))
-            img_base64 = convert_image_to_base64(img)
-            images.append((f"Page {page_num + 1} - Image {img_index + 1}", img_base64))
+            images.append((f"Page {page_num + 1} - Image {img_index + 1}", img))
 
     return text, images
-
-
-# Function to convert an image to base64 format
-def convert_image_to_base64(image_raw):
-    buffered = BytesIO()
-    image_raw.save(buffered, format="PNG")
-    img_byte = buffered.getvalue()
-    return base64.b64encode(img_byte).decode('utf-8')
 
 
 # Function to query and stream the response from the LLM
@@ -102,6 +93,7 @@ def main():
             "gpt-3.5-turbo-16k", 
             "gpt-4", 
             "gpt-4-32k",
+           # "o1-preview",
         ], index=0)
 
         with st.popover("⚙️ Model parameters"):
@@ -208,12 +200,6 @@ def main():
         if uploaded_pdf:
             with st.spinner("Extracting content from the PDF..."):
                 pdf_text, pdf_images = extract_content_from_pdf(uploaded_pdf)
-
-                # Create message content with both text and base64 images
-                pdf_content_message = f"Extracted text:\n\n{pdf_text}\n\n"
-                for img_name, img_base64 in pdf_images:
-                    pdf_content_message += f"{img_name}: [Image base64]({img_base64})\n\n"
-
                 st.write("### Extracted text from the PDF:")
                 st.write(pdf_text)
 
@@ -221,24 +207,40 @@ def main():
                     st.write("### Extracted images from the PDF:")
                     for img_name, img in pdf_images:
                         st.write(img_name)
-                        st.image(f"data:image/png;base64,{img}")
+                        st.image(img)
 
-                # Use extracted text and base64 images to query the LLM
+                # Use extracted text to query the LLM
                 if prompt := st.chat_input("Analyze the extracted PDF content or ask a question..."):
-                    user_message = f"Analyze the following PDF content:\n\n{pdf_content_message}\n\nUser's question: {prompt}"
+                    user_message = f"Analyze the following PDF content:\n\n{pdf_text}\n\nUser's question: {prompt}"
                     st.session_state.messages.append(
                         {"role": "user", "content": [{"type": "text", "text": user_message}]}
                     )
 
-                    # Displaying the new messages
+                    # Displaying the new user message
                     with st.chat_message("user"):
                         st.markdown(user_message)
 
+                    # Query the LLM
                     with st.chat_message("assistant"):
                         latex_output = ""
                         for chunk in stream_llm_response(client, model_params):
                             latex_output += chunk
                         st.markdown(latex_output)
+
+            # Audio Response (optional)
+            if audio_response:
+                response = client.audio.speech.create(
+                    model=tts_model,
+                    voice=tts_voice,
+                    input=st.session_state.messages[-1]["content"][0]["text"],
+                )
+                audio_base64 = base64.b64encode(response.content).decode('utf-8')
+                audio_html = f"""
+                <audio controls autoplay>
+                    <source src="data:audio/wav;base64,{audio_base64}" type="audio/mp3">
+                </audio>
+                """
+                st.markdown(audio_html, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
