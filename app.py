@@ -9,7 +9,6 @@ import base64
 
 dotenv.load_dotenv()
 
-
 # Function to extract text and images from a PDF
 def extract_content_from_pdf(pdf_file):
     doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
@@ -30,7 +29,6 @@ def extract_content_from_pdf(pdf_file):
             images.append((f"Page {page_num + 1} - Image {img_index + 1}", img))
 
     return text, images
-
 
 # Function to query and stream the response from the LLM
 def stream_llm_response(client, model_params):
@@ -55,14 +53,12 @@ def stream_llm_response(client, model_params):
             }
         ]})
 
-
 # Function to convert file to base64 (image handling)
 def get_image_base64(image_raw):
     buffered = BytesIO()
     image_raw.save(buffered, format=image_raw.format)
     img_byte = buffered.getvalue()
     return base64.b64encode(img_byte).decode('utf-8')
-
 
 def main():
 
@@ -82,7 +78,7 @@ def main():
     # --- Side Bar ---
     with st.sidebar:
         default_openai_api_key = os.getenv("OPENAI_API_KEY") if os.getenv("OPENAI_API_KEY") is not None else ""
-        with st.popover("🔐 OpenAI API Key"):
+        with st.expander("🔐 OpenAI API Key"):
             openai_api_key = st.text_input("Introduce your OpenAI API Key (https://platform.openai.com/)", value=default_openai_api_key, type="password")
 
         st.divider()
@@ -93,13 +89,12 @@ def main():
             "gpt-3.5-turbo-16k", 
             "gpt-4", 
             "gpt-4-32k",
-           # "o1-preview",
         ], index=0)
 
-        with st.popover("⚙️ Model parameters"):
+        with st.expander("⚙️ Model parameters"):
             model_temp = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.0, step=0.1)
 
-        audio_response = st.toggle("Audio response", value=False)
+        audio_response = st.checkbox("Audio response", value=False)
         if audio_response:
             cols = st.columns(2)
             with cols[0]:
@@ -147,7 +142,7 @@ def main():
         cols_img = st.columns(2)
 
         with cols_img[0]:
-            with st.popover("📁 Upload"):
+            with st.expander("📁 Upload"):
                 st.file_uploader(
                     "Upload an image", 
                     type=["png", "jpg", "jpeg"], 
@@ -157,7 +152,7 @@ def main():
                 )
 
         with cols_img[1]:                    
-            with st.popover("📸 Camera"):
+            with st.expander("📸 Camera"):
                 activate_camera = st.checkbox("Activate camera")
                 if activate_camera:
                     st.camera_input(
@@ -227,21 +222,40 @@ def main():
                             latex_output += chunk
                         st.markdown(latex_output)
 
-            # Audio Response (optional)
-            if audio_response:
-                response = client.audio.speech.create(
-                    model=tts_model,
-                    voice=tts_voice,
-                    input=st.session_state.messages[-1]["content"][0]["text"],
+        else:
+            # Allow user to input a message without uploading a PDF
+            if prompt := st.chat_input("Type your message here..."):
+                user_message = prompt
+                st.session_state.messages.append(
+                    {"role": "user", "content": [{"type": "text", "text": user_message}]}
                 )
-                audio_base64 = base64.b64encode(response.content).decode('utf-8')
-                audio_html = f"""
-                <audio controls autoplay>
-                    <source src="data:audio/wav;base64,{audio_base64}" type="audio/mp3">
-                </audio>
-                """
-                st.markdown(audio_html, unsafe_allow_html=True)
 
+                # Displaying the new user message
+                with st.chat_message("user"):
+                    st.markdown(user_message)
+
+                # Query the LLM
+                with st.chat_message("assistant"):
+                    latex_output = ""
+                    for chunk in stream_llm_response(client, model_params):
+                        latex_output += chunk
+                    st.markdown(latex_output)
+
+        # Audio Response (optional)
+        if audio_response and st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant":
+            response_text = st.session_state.messages[-1]["content"][0]["text"]
+            response = client.audio.speech.create(
+                model=tts_model,
+                voice=tts_voice,
+                input=response_text,
+            )
+            audio_base64 = base64.b64encode(response.content).decode('utf-8')
+            audio_html = f"""
+            <audio controls autoplay>
+                <source src="data:audio/wav;base64,{audio_base64}" type="audio/mp3">
+            </audio>
+            """
+            st.markdown(audio_html, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
