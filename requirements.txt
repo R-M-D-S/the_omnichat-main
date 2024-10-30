@@ -3,7 +3,7 @@ PyMuPDF==1.24.10
 numpy==2.1.2
 openai==1.52.2
 Pillow==10.0.0
-PyAudio==0.2.14
+PyAudio==0.2.11
 python-dotenv==1.0.1
 soundfile==0.12.1
 streamlit==1.36.0
