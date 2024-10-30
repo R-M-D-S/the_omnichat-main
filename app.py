@@ -340,8 +340,6 @@ def main():
             st.write("📋[Stemperiodt Blog](https://stemperiodt.co.za/blog/)")
 
 
-
-
         # Chat input
         if prompt := st.chat_input("Hi! Ask me anything...") or audio_prompt:
             st.session_state.messages.append(
