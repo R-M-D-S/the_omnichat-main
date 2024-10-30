@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import numpy as np
 import re
 import base64
 import asyncio
@@ -8,7 +9,7 @@ import pyaudio
 import json
 from io import BytesIO
 from dotenv import load_dotenv
-from pydub import AudioSegment
+import soundfile as sf
 import fitz  # PyMuPDF for PDF text and image extraction
 from PIL import Image
 from openai import OpenAI
@@ -100,11 +101,16 @@ async def connect_to_openai_websocket(audio_data):
         return b"".join(response_audio)
 
 # Function to play audio in real-time within Streamlit
+# Updated function to play audio in real-time within Streamlit
 def play_audio_stream(audio_data):
-    audio_segment = AudioSegment.from_raw(BytesIO(audio_data), sample_width=2, frame_rate=RATE, channels=1)
+    # Convert raw byte data to NumPy array with correct shape
+    audio_array = np.frombuffer(audio_data, dtype=np.int16)
+    
+    # Write the audio array to a BytesIO stream as WAV format
     with BytesIO() as buffer:
-        audio_segment.export(buffer, format="wav")
-        st.audio(buffer.getvalue(), format="audio/wav")
+        sf.write(buffer, audio_array, RATE, format="WAV")
+        buffer.seek(0)
+        st.audio(buffer.read(), format="audio/wav")
 
 # Function to extract text and images from a PDF
 def extract_content_from_pdf(pdf_file):
