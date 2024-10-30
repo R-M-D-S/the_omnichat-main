@@ -5,7 +5,7 @@ import re
 import base64
 import asyncio
 import websockets
-import pyaudio
+import sounddevice as sd
 import json
 from io import BytesIO
 from dotenv import load_dotenv
@@ -20,14 +20,12 @@ load_dotenv()
 
 
 # Audio configuration
-AUDIO_FORMAT = pyaudio.paInt16  # 16-bit PCM
+#AUDIO_FORMAT = sf.paInt16  # 16-bit PCM
 CHANNELS = 1
 RATE = 23000
 CHUNK = 1024
 RECORD_SECONDS = 5  # Duration for audio recording
 
-# Initialize pyaudio
-audio_interface = pyaudio.PyAudio()
 
 # Function to convert audio chunks to base64-encoded PCM
 def audio_chunk_to_base64(audio_chunk):
@@ -35,18 +33,19 @@ def audio_chunk_to_base64(audio_chunk):
 
 # Function to record audio for a set duration
 def record_audio():
-    stream = audio_interface.open(format=AUDIO_FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-    audio_data = []
-
+    # Initialize recording parameters
+    audio_data = []  # To store recorded chunks, if needed
     st.write("Recording...")
-    for _ in range(int(RATE / CHUNK * RECORD_SECONDS)):
-        audio_chunk = stream.read(CHUNK)
-        audio_data.append(audio_chunk)
 
-    stream.stop_stream()
-    stream.close()
+    # Record audio for the specified duration
+    recorded_audio = sd.rec(int(RECORD_SECONDS * RATE), samplerate=RATE, channels=CHANNELS, dtype='int16')
+    sd.wait()  # Wait until the recording is complete
+
+    # Add recorded audio to list (if you want to use audio_data for further processing)
+    audio_data.append(recorded_audio)
+    
     st.write("Recording stopped.")
-    return audio_data
+    return recorded_audio
 
 # Real-time WebSocket function to send and receive audio
 async def connect_to_openai_websocket(audio_data):
@@ -102,15 +101,17 @@ async def connect_to_openai_websocket(audio_data):
 
 # Function to play audio in real-time within Streamlit
 # Updated function to play audio in real-time within Streamlit
-def play_audio_stream(audio_data):
-    # Convert raw byte data to NumPy array with correct shape
-    audio_array = np.frombuffer(audio_data, dtype=np.int16)
+def play_audio_stream(response_audio, samplerate=RATE, dtype='int16'):
+    # Convert response_audio to a NumPy array with a supported dtype
+    if not isinstance(response_audio, np.ndarray):
+        response_audio = np.frombuffer(response_audio, dtype=dtype)
     
-    # Write the audio array to a BytesIO stream as WAV format
-    with BytesIO() as buffer:
-        sf.write(buffer, audio_array, RATE, format="WAV")
-        buffer.seek(0)
-        st.audio(buffer.read(), format="audio/wav")
+    # Ensure audio data is in the correct format
+    response_audio = response_audio.astype(dtype)
+
+    # Play the audio data
+    sd.play(response_audio, samplerate=samplerate)
+    sd.wait()  # Wait until playback is finished
 
 # Function to extract text and images from a PDF
 def extract_content_from_pdf(pdf_file):
