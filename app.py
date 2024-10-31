@@ -90,34 +90,18 @@ async def connect_to_openai_websocket(audio_data):
 
 # Function to play audio in real-time within Streamlit
 def play_audio_stream(audio_data):
-    audio_segment = AudioSegment.from_raw(BytesIO(audio_data), sample_width=2, frame_rate=RATE, channels=1)
-    with BytesIO() as buffer:
-        audio_segment.export(buffer, format="wav")
-        st.audio(buffer.getvalue(), format="audio/wav")
+    if audio_data:
+        audio_segment = AudioSegment.from_raw(BytesIO(audio_data), sample_width=2, frame_rate=RATE, channels=1)
+        with BytesIO() as buffer:
+            audio_segment.export(buffer, format="wav")
+            st.audio(buffer.getvalue(), format="audio/wav")
 
 
-def wav_to_bytes(wav_file_path=None, wav_file_obj=None):
-    """
-    Convert a WAV file to bytes.
-    
-    :param wav_file_path: Path to the WAV file (if provided)
-    :param wav_file_obj: BytesIO object containing WAV data (if provided)
-    :return: Bytes representation of the WAV file
-    """
-    if wav_file_path:
-        # Read the WAV file from the specified path
-        with wave.open(wav_file_path, 'rb') as wav_file:
-            # Create a BytesIO object to hold the bytes
-            byte_io = io.BytesIO()
-            # Write the WAV data to the BytesIO object
-            byte_io.write(wav_file.readframes(wav_file.getnframes()))
-            # Get the bytes from the BytesIO object
-            return byte_io.getvalue()
-    elif isinstance(wav_file_obj, bytes):
-        # If a bytes object is provided, return it directly
-        return wav_file_obj
-    else:
-        raise ValueError("You must provide either a WAV file path or a bytes object.")
+def wav_to_bytes(wav_data):
+    with wave.open(io.BytesIO(wav_data), 'rb') as wav_file:
+        byte_io = io.BytesIO()
+        byte_io.write(wav_file.readframes(wav_file.getnframes()))
+        return byte_io.getvalue()
 
 
 
@@ -361,17 +345,27 @@ def main():
             # Add this code block inside the main function, where you handle audio recording
 
             if audio_recorder_enabled:
-                speech = audio_recorder("Press to start live chat:", icon_size="3x", neutral_color="#6ca395", )
+                st.write("### Real-time Tutor Chat")
+
+                speech_recorded = audio_recorder("Press to start live chat:", icon_size="3x",neutral_color="#6ca395",)
                 
-                if speech_input is not None:
-                    # Ensure that the audio is in the correct format (bytes)
-                    if isinstance(speech_input, bytes):
-                        audio_output = wav_to_bytes(wav_file_path=None, wav_file_obj=speech_input)
-                        response_audio = asyncio.run(connect_to_openai_websocket(audio_output))
-                        if response_audio:
-                            play_audio_stream(response_audio)
-                    else:
-                        st.error("Audio recording was not successful. Please try again.")
+                if speech_recorded:
+                        st.success("Recording successful! Now playing it back...")
+                        play_audio_stream(speech_recorded)
+
+                        # Sending audio to WebSocket if needed
+                        if st.button("Send audio to Thuto for response"):
+                            # Convert recorded audio to the correct format and send it
+                            audio_output = [speech_recorded]  # Wrap in list for chunk processing
+                            response_audio = asyncio.run(connect_to_openai_websocket(audio_output))
+                            
+                            if response_audio:
+                                st.success("Response received! Playing Thuto's answer...")
+                                play_audio_stream(response_audio)
+                            else:
+                                st.error("No response received. Please try again.")
+                else:
+                    st.info("Press the button above to record audio.")
 
         # Chat input
         if prompt := st.chat_input("Hi! Ask me anything...") or audio_prompt:
