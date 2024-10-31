@@ -331,9 +331,9 @@ def main():
 
             if audio_recorder_enabled:
                 speech = audio_recorder("Press to start live chat:", icon_size="3x", neutral_color="#6ca395", )
-                audio_output = audio_chunk_to_base64(speech)
                 # Check if the audio receiver is available
-                if audio_output is not None:
+                if speech is not None:
+                    audio_output = audio_chunk_to_base64(speech)
                     response_audio = asyncio.run(connect_to_openai_websocket(audio_output))
                     if response_audio:
                         play_audio_stream(response_audio)
