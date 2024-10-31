@@ -23,7 +23,6 @@ AUDIO_FORMAT = "pcm16"  # 16-bit PCM format for WebRTC
 CHANNELS = 1
 RATE = 23000
 CHUNK = 1024
-RECORD_SECONDS = 5  # Duration for audio recording
 
 
 # Function to convert audio chunks to base64-encoded PCM
