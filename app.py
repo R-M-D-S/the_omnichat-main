@@ -12,7 +12,8 @@ import fitz  # PyMuPDF for PDF text and image extraction
 from PIL import Image
 from openai import OpenAI
 from audio_recorder_streamlit import audio_recorder
-import pydub
+import io
+import wave
 # Load environment variables
 load_dotenv()
 
@@ -27,9 +28,14 @@ RECORD_SECONDS = 5  # Duration for audio recording
 
 # Function to convert audio chunks to base64-encoded PCM
 def audio_chunk_to_base64(audio_chunk):
-    if isinstance(audio_chunk, str):
-        audio_chunk = audio_chunk.encode('utf-8')  # Ensure bytes encoding
-    return base64.b64encode(audio_chunk).decode('utf-8')
+    if isinstance(audio_chunk, bytes):  # Ensure audio_chunk is in bytes format
+        return base64.b64encode(audio_chunk).decode('utf-8')
+    elif isinstance(audio_chunk, str):  # Handle string case, if applicable
+        audio_chunk = audio_chunk.encode('utf-8')
+        return base64.b64encode(audio_chunk).decode('utf-8')
+    else:
+        raise TypeError("Audio chunk must be of type bytes or str.")
+
 
 # Real-time WebSocket function to send and receive audio
 async def connect_to_openai_websocket(audio_data):
@@ -89,6 +95,32 @@ def play_audio_stream(audio_data):
     with BytesIO() as buffer:
         audio_segment.export(buffer, format="wav")
         st.audio(buffer.getvalue(), format="audio/wav")
+
+
+def wav_to_bytes(wav_file_path=None, wav_file_obj=None):
+    """
+    Convert a WAV file to bytes.
+    
+    :param wav_file_path: Path to the WAV file (if provided)
+    :param wav_file_obj: BytesIO object containing WAV data (if provided)
+    :return: Bytes representation of the WAV file
+    """
+    if wav_file_path:
+        # Read the WAV file from the specified path
+        with wave.open(wav_file_path, 'rb') as wav_file:
+            # Create a BytesIO object to hold the bytes
+            byte_io = io.BytesIO()
+            # Write the WAV data to the BytesIO object
+            byte_io.write(wav_file.readframes(wav_file.getnframes()))
+            # Get the bytes from the BytesIO object
+            return byte_io.getvalue()
+    elif isinstance(wav_file_obj, bytes):
+        # If a bytes object is provided, return it directly
+        return wav_file_obj
+    else:
+        raise ValueError("You must provide either a WAV file path or a bytes object.")
+
+
 
 # Function to extract text and images from a PDF
 def extract_content_from_pdf(pdf_file):
@@ -331,12 +363,16 @@ def main():
 
             if audio_recorder_enabled:
                 speech = audio_recorder("Press to start live chat:", icon_size="3x", neutral_color="#6ca395", )
-                # Check if the audio receiver is available
-                if speech is not None:
-                    audio_output = audio_chunk_to_base64(speech)
-                    response_audio = asyncio.run(connect_to_openai_websocket(audio_output))
-                    if response_audio:
-                        play_audio_stream(response_audio)
+                
+                if speech_input is not None:
+                    # Ensure that the audio is in the correct format (bytes)
+                    if isinstance(speech_input, bytes):
+                        audio_output = wav_to_bytes(wav_file_path=None, wav_file_obj=speech_input)
+                        response_audio = asyncio.run(connect_to_openai_websocket(audio_output))
+                        if response_audio:
+                            play_audio_stream(response_audio)
+                    else:
+                        st.error("Audio recording was not successful. Please try again.")
 
         # Chat input
         if prompt := st.chat_input("Hi! Ask me anything...") or audio_prompt:
