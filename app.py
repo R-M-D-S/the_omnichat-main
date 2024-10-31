@@ -4,7 +4,6 @@ import re
 import base64
 import asyncio
 import websockets
-import pyaudio
 import json
 from io import BytesIO
 from dotenv import load_dotenv
@@ -13,39 +12,34 @@ import fitz  # PyMuPDF for PDF text and image extraction
 from PIL import Image
 from openai import OpenAI
 from audio_recorder_streamlit import audio_recorder
-
+from streamlit_webrtc import webrtc_streamer, WebRtcMode
+import pydub
 # Load environment variables
 load_dotenv()
 
 
 # Audio configuration
-AUDIO_FORMAT = pyaudio.paInt16  # 16-bit PCM
+AUDIO_FORMAT = "pcm16"  # 16-bit PCM format for WebRTC
 CHANNELS = 1
 RATE = 23000
 CHUNK = 1024
 RECORD_SECONDS = 5  # Duration for audio recording
 
-# Initialize pyaudio
-audio_interface = pyaudio.PyAudio()
+# WebRTC configuration for microphone access
+rtc_configuration = {
+    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]  # Example STUN server configuration
+}
+
+media_stream_constraints = {
+    "audio": True,
+    "video": False,
+}
 
 # Function to convert audio chunks to base64-encoded PCM
 def audio_chunk_to_base64(audio_chunk):
+    if isinstance(audio_chunk, str):
+        audio_chunk = audio_chunk.encode('utf-8')  # Ensure bytes encoding
     return base64.b64encode(audio_chunk).decode('utf-8')
-
-# Function to record audio for a set duration
-def record_audio():
-    stream = audio_interface.open(format=AUDIO_FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-    audio_data = []
-
-    st.write("Recording...")
-    for _ in range(int(RATE / CHUNK * RECORD_SECONDS)):
-        audio_chunk = stream.read(CHUNK)
-        audio_data.append(audio_chunk)
-
-    stream.stop_stream()
-    stream.close()
-    st.write("Recording stopped.")
-    return audio_data
 
 # Real-time WebSocket function to send and receive audio
 async def connect_to_openai_websocket(audio_data):
@@ -340,6 +334,51 @@ def main():
             st.write("📋[Stemperiodt Blog](https://stemperiodt.co.za/blog/)")
 
 
+            st.divider()
+            st.sidebar.write("### Real time Tutor Chat")
+            audio_recorder_enabled = st.sidebar.checkbox("Enable Tutor Chat")
+            # Add this code block inside the main function, where you handle audio recording
+
+            # Initialize a buffer to hold audio data
+            buffered_audio_data = []
+
+            if audio_recorder_enabled:
+                webrtc_ctx = webrtc_streamer(
+                    key="audio_recorder",
+                    rtc_configuration=rtc_configuration,
+                    media_stream_constraints=media_stream_constraints,
+                    mode=WebRtcMode.SENDRECV
+                )
+
+                # Check if the audio receiver is available
+                if webrtc_ctx.audio_receiver is not None:
+                    audio_frames = webrtc_ctx.audio_receiver.get_frames(timeout=1)
+
+                    if audio_frames:
+                        for audio_frame in audio_frames:
+                            audio_data = pydub.AudioSegment(
+                                data=audio_frame.to_ndarray().tobytes(),
+                                sample_width=audio_frame.format.bytes,
+                                frame_rate=audio_frame.sample_rate,
+                                channels=len(audio_frame.layout.channels),
+                            )
+                            # Append to the buffered audio data
+                            buffered_audio_data.append(audio_data)
+    
+                        # Concatenate all buffered audio segments
+                        if buffered_audio_data:
+                            combined_audio_data = sum(buffered_audio_data)  # Combine all audio segments
+                            try:
+                                response_audio = asyncio.run(connect_to_openai_websocket(combined_audio_data))
+                                if response_audio:
+                                    play_audio_stream(response_audio)
+                            except Exception as e:
+                                st.error(f"Error during WebSocket communication: {e}")
+                    else:
+                        st.warning("No audio frames received. Please check your microphone settings or permissions.")
+                else:
+                    st.warning("WebRTC audio receiver not available. Please check your microphone settings or permissions.")
+
         # Chat input
         if prompt := st.chat_input("Hi! Ask me anything...") or audio_prompt:
             st.session_state.messages.append(
@@ -421,16 +460,6 @@ def main():
                         st.markdown(latex_output)
 
 
-
-    # Button to start recording and handle the entire flow
-    if st.button("Start Recording"):
-        # Record audio for a fixed duration
-        audio_data = record_audio()
-        
-        # Process audio and play response automatically
-        response_audio = asyncio.run(connect_to_openai_websocket(audio_data))
-        if response_audio:
-            play_audio_stream(response_audio)
 
 if __name__ == "__main__":
     # Start the Streamlit app (runs on the main thread)

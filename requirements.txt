@@ -1,9 +1,9 @@
 audio_recorder_streamlit==0.0.8
 PyMuPDF==1.24.10
 openai==1.53.0
-Pillow==10.0.0
-PyAudio==0.2.14
+Pillow==11.0.0
 pydub==0.25.1
 python-dotenv==1.0.1
 streamlit==1.36.0
+streamlit_webrtc==0.47.9
 websockets==13.1
