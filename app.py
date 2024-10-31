@@ -12,7 +12,6 @@ import fitz  # PyMuPDF for PDF text and image extraction
 from PIL import Image
 from openai import OpenAI
 from audio_recorder_streamlit import audio_recorder
-from streamlit_webrtc import webrtc_streamer, WebRtcMode
 import pydub
 # Load environment variables
 load_dotenv()
@@ -25,15 +24,6 @@ RATE = 23000
 CHUNK = 1024
 RECORD_SECONDS = 5  # Duration for audio recording
 
-# WebRTC configuration for microphone access
-rtc_configuration = {
-    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]  # Example STUN server configuration
-}
-
-media_stream_constraints = {
-    "audio": True,
-    "video": False,
-}
 
 # Function to convert audio chunks to base64-encoded PCM
 def audio_chunk_to_base64(audio_chunk):
@@ -339,45 +329,13 @@ def main():
             audio_recorder_enabled = st.sidebar.checkbox("Enable Tutor Chat")
             # Add this code block inside the main function, where you handle audio recording
 
-            # Initialize a buffer to hold audio data
-            buffered_audio_data = []
-
             if audio_recorder_enabled:
-                webrtc_ctx = webrtc_streamer(
-                    key="audio_recorder",
-                    rtc_configuration=rtc_configuration,
-                    media_stream_constraints=media_stream_constraints,
-                    mode=WebRtcMode.SENDRECV
-                )
-
+                speech = audio_recorder("Press to start live chat:", icon_size="3x", neutral_color="#6ca395", )
                 # Check if the audio receiver is available
-                if webrtc_ctx.audio_receiver is not None:
-                    audio_frames = webrtc_ctx.audio_receiver.get_frames(timeout=1)
-
-                    if audio_frames:
-                        for audio_frame in audio_frames:
-                            audio_data = pydub.AudioSegment(
-                                data=audio_frame.to_ndarray().tobytes(),
-                                sample_width=audio_frame.format.bytes,
-                                frame_rate=audio_frame.sample_rate,
-                                channels=len(audio_frame.layout.channels),
-                            )
-                            # Append to the buffered audio data
-                            buffered_audio_data.append(audio_data)
-    
-                        # Concatenate all buffered audio segments
-                        if buffered_audio_data:
-                            combined_audio_data = sum(buffered_audio_data)  # Combine all audio segments
-                            try:
-                                response_audio = asyncio.run(connect_to_openai_websocket(combined_audio_data))
-                                if response_audio:
-                                    play_audio_stream(response_audio)
-                            except Exception as e:
-                                st.error(f"Error during WebSocket communication: {e}")
-                    else:
-                        st.warning("No audio frames received. Please check your microphone settings or permissions.")
-                else:
-                    st.warning("WebRTC audio receiver not available. Please check your microphone settings or permissions.")
+                if speech is not None:
+                    response_audio = asyncio.run(connect_to_openai_websocket(audio_chunk_to_base64(speech)))
+                    if response_audio:
+                        play_audio_stream(response_audio)
 
         # Chat input
         if prompt := st.chat_input("Hi! Ask me anything...") or audio_prompt:
