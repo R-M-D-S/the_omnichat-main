@@ -447,8 +447,6 @@ def main():
                             latex_output += chunk
                         st.markdown(latex_output)
 
-
-
 if __name__ == "__main__":
     # Start the Streamlit app (runs on the main thread)
     main()
