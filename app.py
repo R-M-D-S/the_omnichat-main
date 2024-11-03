@@ -17,7 +17,6 @@ from audio_recorder_streamlit import audio_recorder
 # Load environment variables
 load_dotenv()
 
-
 # Audio configuration
 AUDIO_FORMAT = pyaudio.paInt16  # 16-bit PCM
 CHANNELS = 1
