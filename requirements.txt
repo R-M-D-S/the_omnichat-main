@@ -9,3 +9,4 @@ streamlit==1.36.0
 streamlit_audiorecorder==0.0.5
 websockets==13.1
 ffmpeg-python==0.2.0
+ffprobe-python==1.0.3
