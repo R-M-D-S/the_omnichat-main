@@ -4,6 +4,7 @@ import re
 import base64
 import asyncio
 import websockets
+import pyaudio
 import json
 from io import BytesIO
 from dotenv import load_dotenv
@@ -12,29 +13,53 @@ import fitz  # PyMuPDF for PDF text and image extraction
 from PIL import Image
 from openai import OpenAI
 from audio_recorder_streamlit import audio_recorder
-import io
-import wave
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_community.document_loaders.text import TextLoader
+from langchain_community.document_loaders import (
+    WebBaseLoader, 
+    PyPDFLoader, 
+    Docx2txtLoader,
+)
+from langchain_community.vectorstores import Chroma
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+
 # Load environment variables
 load_dotenv()
 
 
 # Audio configuration
-AUDIO_FORMAT = "pcm16"  # 16-bit PCM format for WebRTC
+AUDIO_FORMAT = pyaudio.paInt16  # 16-bit PCM
 CHANNELS = 1
 RATE = 23000
 CHUNK = 1024
+RECORD_SECONDS = 5  # Duration for audio recording
 
+# Initialize pyaudio
+audio_interface = pyaudio.PyAudio()
 
 # Function to convert audio chunks to base64-encoded PCM
 def audio_chunk_to_base64(audio_chunk):
-    if isinstance(audio_chunk, bytes):  # Ensure audio_chunk is in bytes format
-        return base64.b64encode(audio_chunk).decode('utf-8')
-    elif isinstance(audio_chunk, str):  # Handle string case, if applicable
-        audio_chunk = audio_chunk.encode('utf-8')
-        return base64.b64encode(audio_chunk).decode('utf-8')
-    else:
-        raise TypeError("Audio chunk must be of type bytes or str.")
+    return base64.b64encode(audio_chunk).decode('utf-8')
 
+# Function to record audio for a set duration
+def record_audio():
+    stream = audio_interface.open(format=AUDIO_FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+    audio_data = []
+
+    st.write("Recording...")
+    for _ in range(int(RATE / CHUNK * RECORD_SECONDS)):
+        audio_chunk = stream.read(CHUNK)
+        audio_data.append(audio_chunk)
+
+    stream.stop_stream()
+    stream.close()
+    st.write("Recording stopped.")
+    return audio_data
 
 # Real-time WebSocket function to send and receive audio
 async def connect_to_openai_websocket(audio_data):
@@ -90,20 +115,10 @@ async def connect_to_openai_websocket(audio_data):
 
 # Function to play audio in real-time within Streamlit
 def play_audio_stream(audio_data):
-    if audio_data:
-        audio_segment = AudioSegment.from_raw(BytesIO(audio_data), sample_width=2, frame_rate=RATE, channels=1)
-        with BytesIO() as buffer:
-            audio_segment.export(buffer, format="wav")
-            st.audio(buffer.getvalue(), format="audio/wav")
-
-
-def wav_to_bytes(wav_data):
-    with wave.open(io.BytesIO(wav_data), 'rb') as wav_file:
-        byte_io = io.BytesIO()
-        byte_io.write(wav_file.readframes(wav_file.getnframes()))
-        return byte_io.getvalue()
-
-
+    audio_segment = AudioSegment.from_raw(BytesIO(audio_data), sample_width=2, frame_rate=RATE, channels=1)
+    with BytesIO() as buffer:
+        audio_segment.export(buffer, format="wav")
+        st.audio(buffer.getvalue(), format="audio/wav")
 
 # Function to extract text and images from a PDF
 def extract_content_from_pdf(pdf_file):
@@ -339,34 +354,6 @@ def main():
             st.write("📋[Stemperiodt Blog](https://stemperiodt.co.za/blog/)")
 
 
-            st.divider()
-            st.sidebar.write("### Real time Tutor Chat")
-            audio_recorder_enabled = st.sidebar.checkbox("Enable Tutor Chat")
-            # Add this code block inside the main function, where you handle audio recording
-
-            if audio_recorder_enabled:
-                st.write("### Real-time Tutor Chat")
-
-                speech_recorded = audio_recorder("Press to start live chat:", icon_size="3x",neutral_color="#6ca395",)
-                
-                if speech_recorded:
-                        st.success("Recording successful! Now playing it back...")
-                        play_audio_stream(speech_recorded)
-
-                        # Sending audio to WebSocket if needed
-                        if st.button("Send audio to Thuto for response"):
-                            # Convert recorded audio to the correct format and send it
-                            audio_output = [speech_recorded]  # Wrap in list for chunk processing
-                            response_audio = asyncio.run(connect_to_openai_websocket(audio_output))
-                            
-                            if response_audio:
-                                st.success("Response received! Playing Thuto's answer...")
-                                play_audio_stream(response_audio)
-                            else:
-                                st.error("No response received. Please try again.")
-                else:
-                    st.info("Press the button above to record audio.")
-
         # Chat input
         if prompt := st.chat_input("Hi! Ask me anything...") or audio_prompt:
             st.session_state.messages.append(
@@ -448,6 +435,16 @@ def main():
                         st.markdown(latex_output)
 
 
+
+    # Button to start recording and handle the entire flow
+    if st.button("Start Recording"):
+        # Record audio for a fixed duration
+        audio_data = record_audio()
+        
+        # Process audio and play response automatically
+        response_audio = asyncio.run(connect_to_openai_websocket(audio_data))
+        if response_audio:
+            play_audio_stream(response_audio)
 
 if __name__ == "__main__":
     # Start the Streamlit app (runs on the main thread)
