@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import numpy as np
 import re
 import base64
 import asyncio
@@ -12,6 +13,7 @@ import fitz  # PyMuPDF for PDF text and image extraction
 from PIL import Image
 from openai import OpenAI
 from audio_recorder_streamlit import audio_recorder
+from audiorecorder import audiorecorder
 import io
 import wave
 # Load environment variables
@@ -94,7 +96,7 @@ def play_audio_stream(audio_data):
         audio_segment = AudioSegment.from_raw(BytesIO(audio_data), sample_width=2, frame_rate=RATE, channels=1)
         with BytesIO() as buffer:
             audio_segment.export(buffer, format="wav")
-            st.audio(buffer.getvalue(), format="audio/wav")
+            st.audio(buffer.getvalue(), format="audio/wav",autoplay=True)
 
 
 def wav_to_bytes(wav_data):
@@ -347,27 +349,28 @@ def main():
             if audio_recorder_enabled:
                 st.write("### Real-time Tutor Chat")
 
-                speech_recorded = audio_recorder("Press to start live chat:", icon_size="3x",neutral_color="#6ca395",)
+                speech_recorded = audiorecorder("Click to record", "Click to stop recording")
                 
                 if speech_recorded:
-                        st.success("Recording successful! Now playing it back...")
-                        play_audio_stream(speech_recorded)
+                    st.success("Recording successful!")
+                    st.audio(speech_recorded.export().read())
 
-                        # Sending audio to WebSocket if needed
-                        if st.button("Send audio to Thuto for response"):
-                            # Convert recorded audio to the correct format and send it
-                            audio_output = [speech_recorded]  # Wrap in list for chunk processing
-                            response_audio = asyncio.run(connect_to_openai_websocket(audio_output))
-                            
-                            if response_audio:
-                                st.success("Response received! Playing Thuto's answer...")
-                                play_audio_stream(response_audio)
-                            else:
-                                st.error("No response received. Please try again.")
-                else:
-                    st.info("Press the button above to record audio.")
+                # Sending audio to WebSocket if needed
+                    audio_buffer = io.BytesIO()
+                    speech_recorded.export(audio_buffer, format="wav", parameters=["-ar", str(16000)])
+                    audio_array = np.frombuffer(audio_buffer.getvalue()[44:], dtype=np.int16).astype(np.float32) / 32768.0
+                    # Convert back to int16
+                    audio_int16 = (audio_array * 32768).astype(np.int16)
 
-        # Chat input
+                    # Convert the int16 array to bytes
+                    audio_bytes = audio_int16.tobytes()
+
+                    response_audio = asyncio.run(connect_to_openai_websocket([audio_bytes]))
+                    
+                    if response_audio:
+                        st.success("Response received! Playing Thuto's answer...")
+                        play_audio_stream(response_audio)
+                        
         if prompt := st.chat_input("Hi! Ask me anything...") or audio_prompt:
             st.session_state.messages.append(
                 {
