@@ -137,10 +137,15 @@ def stream_llm_response(client, model_params):
 
     
     response_message = ""
+    system_role = "You are an advanced AI tutor named Thuto the Tutor, specializing in all things Mathematics and science. Provide clear, structured explanations to assist students, focusing mainly on the mathematics and science related topics and nothing else."
+
+    prompt = [{"role": "system", "content": system_role}
+    ]
+    prompt += st.session_state["messages"]
 
     for chunk in client.chat.completions.create(
         model=model_params["model"],
-        messages=st.session_state.messages,
+        messages=prompt,
         temperature=model_params["temperature"],
         max_tokens=4096,
         stream=True,
@@ -154,6 +159,7 @@ def stream_llm_response(client, model_params):
         "role": "assistant",
         "content": [{"type": "text", "text": response_message}]
     })
+
 
 
 # Function to convert file to base64 (image handling)
