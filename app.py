@@ -10,22 +10,199 @@ from io import BytesIO
 from dotenv import load_dotenv
 from pydub import AudioSegment
 import fitz  # PyMuPDF for PDF text and image extraction
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from openai import OpenAI
 from audio_recorder_streamlit import audio_recorder
 from audiorecorder import audiorecorder
 import io
 import wave
+from moviepy.audio.io.AudioFileClip import AudioFileClip
+from moviepy.video.VideoClip import ImageClip
+from moviepy.video.compositing.concatenate import concatenate_videoclips
+#from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
+from langchain.agents import initialize_agent, AgentType, Tool
+from langchain.agents.agent_toolkits import JsonToolkit
+from langchain.llms import OpenAI as LangOpenAI
+from langchain.memory import ConversationBufferMemory
+from langchain.tools import tool
+from matplotlib import pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
+
 # Load environment variables
 load_dotenv()
 
+# Directories for temp media
+os.makedirs("slides", exist_ok=True)
+os.makedirs("audio", exist_ok=True)
 
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Audio configuration
 AUDIO_FORMAT = "pcm16"  # 16-bit PCM format for WebRTC
 CHANNELS = 1
 RATE = 23000
 CHUNK = 1024
 
+@tool
+def calculate_area(input: str) -> str:
+    """
+    Calculate area of a rectangle. Input should be 'length,width'.
+    Example: '5,3'
+    """
+    try:
+        length, width = map(float, input.split(","))
+        return f"The area is {length * width}"
+    except Exception as e:
+        return f"Error parsing input: {e}. Please provide two numbers separated by a comma."
+
+def describe_image(image_file):
+    return "An educational image related to the topic."
+
+def generate_explanation_script(prompt, image_desc=None):
+    base_prompt = f"""Generate an educational video script for the following topic: '{prompt}'.
+    Structure the script into 3-5 slides. Each slide should have:
+    - A title
+    - A short explanation (2-4 lines)
+    - Optionally refer to this image content: {image_desc if image_desc else 'No image provided'}.
+    Output as a JSON list of slides with keys 'title' and 'text'."""
+    response = client.chat.completions.create(
+        model="chatgpt-4o-latest",
+        messages=[
+            {"role": "system", "content": "You are a tutor creating educational video scripts."},
+            {"role": "user", "content": base_prompt}
+        ],
+        temperature=0.3
+    )
+    return json.loads(response.choices[0].message.content)
+
+def create_slide_image(title, text, output_path):
+
+
+    def llm_generate_matplotlib_code(topic_text):
+        prompt = f"""
+        You are a Python data visualization assistant.
+        Based on the educational topic below, write a simple and clear matplotlib plot code snippet that illustrates the concept. Avoid file output commands like savefig or show.
+
+        Topic: {topic_text}
+
+        Only respond with valid Python code using matplotlib (and optionally numpy). Do not include explanations.
+        """
+        response = client.chat.completions.create(
+            model="chatgpt-4o-latest",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0
+        )
+        return response.choices[0].message.content
+
+    def generate_diagram_with_llm(topic_text):
+        code = llm_generate_matplotlib_code(topic_text)
+        fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
+        local_vars = {"plt": plt, "fig": fig, "ax": ax, "np": __import__('numpy')}
+        try:
+            exec(code, {}, local_vars)
+        except Exception as e:
+            #ax.text(0.5, 0.5, f"Error:\n{str(e)}", horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+            ax.axis('off')
+        fig.canvas.draw()
+        width, height = fig.canvas.get_width_height()
+        buf = fig.canvas.buffer_rgba()
+        img = Image.frombuffer('RGBA', (width, height), buf, 'raw', 'RGBA', 0, 1)
+
+        plt.close(fig)
+        return img
+    
+
+    img = Image.new('RGB', (1280, 720), color='white')
+    draw = ImageDraw.Draw(img)
+    font_title = ImageFont.truetype("arialbd.ttf", 48) if os.name == 'nt' else ImageFont.load_default()
+    font_text = ImageFont.truetype("arial.ttf", 32) if os.name == 'nt' else ImageFont.load_default()
+
+    draw.text((50, 50), title, fill='black', font=font_title)
+
+    max_width = 850
+    lines = []
+    words = text.split()
+    line = ""
+
+    for word in words:
+        test_line = f"{line} {word}".strip()
+        bbox = font_text.getbbox(test_line)
+        width = bbox[2] - bbox[0]
+        if width <= max_width:
+            line = test_line
+        else:
+            lines.append(line)
+            line = word
+    lines.append(line)
+
+    y_text = 150
+    for line in lines:
+        draw.text((50, y_text), line, font=font_text, fill='black')
+        y_text += 40
+
+    diagram_img = generate_diagram_with_llm(title + " " + text)
+    img.paste(diagram_img.resize((300, 300)), (900, 50))
+
+    img.save(output_path)
+
+
+
+def generate_narration_audio(text, filename):
+    audio = client.audio.speech.create(
+        model="tts-1-hd",
+        voice="nova",
+        input=text
+    )
+    with open(filename, 'wb') as f:
+        f.write(audio.content)
+
+def assemble_video(slides, output_path):
+    clips = []
+    for i, slide in enumerate(slides):
+        img_path = f"slides/slide_{i}.png"
+        audio_path = f"audio/audio_{i}.mp3"
+        create_slide_image(slide["title"], slide["text"], img_path)
+        generate_narration_audio(slide["text"], audio_path)
+        audio_clip = AudioFileClip(audio_path)
+        img_clip = ImageClip(img_path).set_duration(audio_clip.duration).set_audio(audio_clip)
+        clips.append(img_clip)
+    final_video = concatenate_videoclips(clips)
+    final_video.write_videofile(output_path, fps=24)
+
+def embed_html5_video(video_path):
+    video_bytes = open(video_path, 'rb').read()
+    video_base64 = base64.b64encode(video_bytes).decode()
+    st.html(f"""
+    <video width='1700' height="400" controls onpause="alert('Paused! Ask a question now.')">
+      <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
+    </video>
+    """)
+
+def run_explainer_ui():
+    st.title("🎥 Interactive Video Explainer")
+
+    prompt = st.text_input("Enter a topic to explain")
+    image_file = st.file_uploader("Optional: Upload an image (JPG/PNG)", type=["jpg", "jpeg", "png"])
+
+    if st.button("Generate Video") and prompt:
+        image_desc = describe_image(image_file) if image_file else None
+        with st.spinner("Generating video script and narration..."):
+            slides = generate_explanation_script(prompt, image_desc)
+            assemble_video(slides, "explainer_video.mp4")
+        st.success("Video generated successfully!")
+        embed_html5_video("explainer_video.mp4")
+
+        st.subheader("🧠 Ask a question about the video:")
+        follow_up = st.text_input("Ask something related to the explanation above")
+        if follow_up:
+            response = client.chat.completions.create(
+                model="chatgpt-4o-latest",
+                messages=[
+                    {"role": "system", "content": "You are a STEM tutor helping clarify video topics."},
+                    {"role": "user", "content": f"The topic was: {prompt}. {follow_up}"}
+                ]
+            )
+            st.markdown(response.choices[0].message.content)
 
 # Function to convert audio chunks to base64-encoded PCM
 def audio_chunk_to_base64(audio_chunk):
@@ -198,6 +375,28 @@ def main():
         initial_sidebar_state="expanded",
     )
 
+    # Set your Tavily API key from https://tavily.com/
+    os.environ["TAVILY_API_KEY"] = os.getenv("TAVILY_API_KEY") or "your-tavily-api-key"
+
+    from langchain_tavily import TavilySearch
+    from langchain_community.tools.tavily_search import TavilySearchResults
+
+    from langchain.tools import tool
+
+    tavily_search_tool = TavilySearch(
+    max_results=5,
+    topic="general",
+)
+
+    @tool
+    def web_search(input: str) -> str:
+        """Search the web using Tavily. Input should be a search query like 'latest AI news'."""
+        try:
+            results = tavily_search_tool(input)
+            return results
+        except Exception as e:
+            return f"Error during search: {e}"
+        
     # --- Header ---
     st.html("""<h1 style="text-align: center; color: #6ca395;">🤖 <i>Thuto The Tutor</i> 💬</h1>""")
     #st.write("Ekurhuleni Map")
@@ -224,6 +423,23 @@ def main():
 
     else:
         client = OpenAI(api_key=openai_api_key)
+                # LangChain LLM setup for ReAct Agent
+        llm = LangOpenAI(openai_api_key=openai_api_key, temperature=0.3)
+
+        tools = [web_search]  # You can add more tools
+
+        memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+
+        react_agent = initialize_agent(
+            tools=tools,
+            llm=llm,
+            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,  # simpler, better parsing fallback
+            verbose=True,
+            memory=memory,
+            handle_parsing_errors=True,
+        )
+
+
 
         if "messages" not in st.session_state:
             st.session_state.messages = []
@@ -348,6 +564,14 @@ def main():
 
 
             st.divider()
+            st.subheader("🎥 Interactive Video Explainer")
+            show_video_explainer = st.checkbox("Enable Video Explainer")
+
+        # Call explainer if enabled
+            if show_video_explainer:
+                run_explainer_ui()
+
+            st.divider()
             st.sidebar.write("### Real time Tutor Chat")
             audio_recorder_enabled = st.sidebar.checkbox("Enable Tutor Chat")
             # Add this code block inside the main function, where you handle audio recording
@@ -376,7 +600,8 @@ def main():
                     if response_audio:
                         st.success("Response received! Playing Thuto's answer...")
                         play_audio_stream(response_audio)
-                        
+        
+        use_react_agent = st.sidebar.checkbox("Use ReAct Agent", value=False)          
         if prompt := st.chat_input("Hi! Ask me anything...") or audio_prompt:
             st.session_state.messages.append(
                 {
@@ -394,8 +619,13 @@ def main():
 
             with st.chat_message("assistant"):
                 latex_output = ""
-                for chunk in stream_llm_response(client, model_params):
-                    latex_output += chunk
+                if use_react_agent:
+                    agent_response = react_agent.run(prompt)
+                    latex_output = agent_response
+                else:
+                    for chunk in stream_llm_response(client, model_params):
+                        latex_output += chunk
+
                 
                 def preprocess_latex(latex_text):
                     # Remove display mode delimiters
