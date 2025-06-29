@@ -1,1 +1,5 @@
 ffmpeg
+moviepy
+langchain
+langchain_community
+langchain_tavily
