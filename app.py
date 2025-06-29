@@ -19,7 +19,6 @@ import wave
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 from moviepy.video.VideoClip import ImageClip
 from moviepy.video.compositing.concatenate import concatenate_videoclips
-#from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 from langchain.agents import initialize_agent, AgentType, Tool
 from langchain.agents.agent_toolkits import JsonToolkit
 from langchain.llms import OpenAI as LangOpenAI
