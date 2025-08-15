@@ -19,6 +19,10 @@ import wave
 from moviepy.audio.io.AudioFileClip import AudioFileClip
 from moviepy.video.VideoClip import ImageClip
 from moviepy.video.compositing.concatenate import concatenate_videoclips
+import tempfile, uuid
+import numpy as np
+from moviepy.audio.AudioClip import AudioArrayClip
+from moviepy.video.VideoClip import ImageClip
 from langchain.agents import initialize_agent, AgentType, Tool
 from langchain.agents.agent_toolkits import JsonToolkit
 from langchain.llms import OpenAI as LangOpenAI
@@ -41,6 +45,7 @@ AUDIO_FORMAT = "pcm16"  # 16-bit PCM format for WebRTC
 CHANNELS = 1
 RATE = 23000
 CHUNK = 1024
+TARGET_SAMPLE_RATE = 24000
 
 @tool
 def calculate_area(input: str) -> str:
@@ -74,16 +79,12 @@ def generate_explanation_script(prompt, image_desc=None):
     )
     return json.loads(response.choices[0].message.content)
 
-def create_slide_image(title, text, output_path):
-
-
+def create_slide_image(title, text):
     def llm_generate_matplotlib_code(topic_text):
         prompt = f"""
         You are a Python data visualization assistant.
         Based on the educational topic below, write a simple and clear matplotlib plot code snippet that illustrates the concept. Avoid file output commands like savefig or show.
-
         Topic: {topic_text}
-
         Only respond with valid Python code using matplotlib (and optionally numpy). Do not include explanations.
         """
         response = client.chat.completions.create(
@@ -99,17 +100,14 @@ def create_slide_image(title, text, output_path):
         local_vars = {"plt": plt, "fig": fig, "ax": ax, "np": __import__('numpy')}
         try:
             exec(code, {}, local_vars)
-        except Exception as e:
-            #ax.text(0.5, 0.5, f"Error:\n{str(e)}", horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+        except Exception:
             ax.axis('off')
         fig.canvas.draw()
         width, height = fig.canvas.get_width_height()
         buf = fig.canvas.buffer_rgba()
         img = Image.frombuffer('RGBA', (width, height), buf, 'raw', 'RGBA', 0, 1)
-
         plt.close(fig)
         return img
-    
 
     img = Image.new('RGB', (1280, 720), color='white')
     draw = ImageDraw.Draw(img)
@@ -119,77 +117,115 @@ def create_slide_image(title, text, output_path):
     draw.text((50, 50), title, fill='black', font=font_title)
 
     max_width = 850
-    lines = []
     words = text.split()
-    line = ""
-
+    lines, line = [], ""
     for word in words:
         test_line = f"{line} {word}".strip()
         bbox = font_text.getbbox(test_line)
-        width = bbox[2] - bbox[0]
-        if width <= max_width:
+        if (bbox[2] - bbox[0]) <= max_width:
             line = test_line
         else:
-            lines.append(line)
-            line = word
+            lines.append(line); line = word
     lines.append(line)
 
     y_text = 150
-    for line in lines:
-        draw.text((50, y_text), line, font=font_text, fill='black')
+    for ln in lines:
+        draw.text((50, y_text), ln, font=font_text, fill='black')
         y_text += 40
 
-    diagram_img = generate_diagram_with_llm(title + " " + text)
+    diagram_img = generate_diagram_with_llm(title + " " + text).convert("RGB")
     img.paste(diagram_img.resize((300, 300)), (900, 50))
-
-    img.save(output_path)
-
+    return img  # <-- return PIL.Image, no saving
 
 
-def generate_narration_audio(text, filename):
-    audio = client.audio.speech.create(
+
+def generate_narration_audio_clip(text):
+    # Get TTS MP3 from OpenAI
+    speech = client.audio.speech.create(
         model="tts-1-hd",
         voice="nova",
-        input=text
+        input=text,
     )
-    with open(filename, 'wb') as f:
-        f.write(audio.content)
+    mp3_bytes = speech.content
 
-def assemble_video(slides, output_path):
+    # Write to a temporary MP3 file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+        f.write(mp3_bytes)
+        temp_mp3_path = f.name
+
+    # Use AudioFileClip to read and convert
+    audio_clip = AudioFileClip(temp_mp3_path).set_fps(TARGET_SAMPLE_RATE)
+
+    return audio_clip
+
+
+
+def assemble_video_bytes(slides):
     clips = []
-    for i, slide in enumerate(slides):
-        img_path = f"slides/slide_{i}.png"
-        audio_path = f"audio/audio_{i}.mp3"
-        create_slide_image(slide["title"], slide["text"], img_path)
-        generate_narration_audio(slide["text"], audio_path)
-        audio_clip = AudioFileClip(audio_path)
-        img_clip = ImageClip(img_path).set_duration(audio_clip.duration).set_audio(audio_clip)
-        clips.append(img_clip)
-    final_video = concatenate_videoclips(clips)
-    final_video.write_videofile(output_path, fps=24)
 
-def embed_html5_video(video_path):
-    video_bytes = open(video_path, 'rb').read()
-    video_base64 = base64.b64encode(video_bytes).decode()
-    st.html(f"""
-    <video width='1700' height="400" controls onpause="alert('Paused! Ask a question now.')">
-      <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
-    </video>
-    """)
+    for i, slide in enumerate(slides):
+        pil_img = create_slide_image(slide["title"], slide["text"])
+        img_frame = np.array(pil_img)
+
+        # Create audio narration clip
+        audio_clip = generate_narration_audio_clip(slide["text"])
+
+        # Set image duration to match exact audio length
+        img_clip = ImageClip(img_frame).set_duration(audio_clip.duration).set_audio(audio_clip)
+
+        clips.append(img_clip)
+
+    # Concatenate all slide clip
+    final_clip = concatenate_videoclips(clips, method="compose")
+
+    # Force audio fps to match target rate before exporting
+    if final_clip.audio:
+        final_clip = final_clip.set_audio(final_clip.audio.set_fps(TARGET_SAMPLE_RATE))
+
+    # Write to temp file and return bytes
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, f"video_{uuid.uuid4().hex}.mp4")
+
+        final_clip.write_videofile(
+            out_path,
+            fps=24,
+            audio_fps=TARGET_SAMPLE_RATE,
+            codec="libx264",
+            audio_codec="aac",
+            preset="ultrafast",
+            logger=None,
+        )
+
+        with open(out_path, "rb") as f:
+            video_bytes = f.read()
+
+    # Cleanup
+    for clip in clips:
+        try: clip.close()
+        except: pass
+
+    try: final_clip.close()
+    except: pass
+
+    return video_bytes
+
+
+def play_video_bytes(video_bytes):
+    st.video(video_bytes)
+
 
 def run_explainer_ui():
     st.title("🎥 Interactive Video Explainer")
-
     prompt = st.text_input("Enter a topic to explain")
-    image_file = st.file_uploader("Optional: Upload an image (JPG/PNG)", type=["jpg", "jpeg", "png"])
+    image_file = st.file_uploader("Optional: Upload an image (JPG/PNG)", type=["jpg","jpeg","png"])
 
     if st.button("Generate Video") and prompt:
         image_desc = describe_image(image_file) if image_file else None
-        with st.spinner("Generating video script and narration..."):
+        with st.spinner("Generating video..."):
             slides = generate_explanation_script(prompt, image_desc)
-            assemble_video(slides, "explainer_video.mp4")
-        st.success("Video generated successfully!")
-        embed_html5_video("explainer_video.mp4")
+            video_bytes = assemble_video_bytes(slides)
+        st.success("Video generated!")
+        st.video(video_bytes)
 
         st.subheader("🧠 Ask a question about the video:")
         follow_up = st.text_input("Ask something related to the explanation above")
@@ -202,6 +238,7 @@ def run_explainer_ui():
                 ]
             )
             st.markdown(response.choices[0].message.content)
+
 
 # Function to convert audio chunks to base64-encoded PCM
 def audio_chunk_to_base64(audio_chunk):
