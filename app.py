@@ -360,7 +360,7 @@ def stream_llm_response(client, model_params):
         model=model_params["model"],
         messages=prompt,
         temperature=model_params["temperature"],
-        max_tokens=4096,
+        max_completion_tokens=4096,
         stream=True,
     ):
         content = chunk.choices[0].delta.content if chunk.choices[0].delta.content else ""
@@ -495,11 +495,8 @@ def main():
             st.divider()
 
             model = st.selectbox("Select a model:", [
-                "chatgpt-4o-latest", 
-                "gpt-4-turbo", 
-                "gpt-3.5-turbo-16k", 
-                "gpt-4", 
-                "gpt-4-32k",
+                "gpt-5.5", 
+                "gpt-5.4", 
             ], index=0)
             
             with st.popover("⚙️ Model parameters"):
@@ -535,7 +532,7 @@ def main():
             st.divider() 
 
             # Image Upload
-            if model in ["chatgpt-4o-latest", "gpt-4-turbo"]:
+            if model in ["gpt-5.5", "gpt-5.4"]:
                     
                 st.write("### **🖼️ Add an image:**")
 
