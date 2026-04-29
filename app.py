@@ -70,12 +70,12 @@ def generate_explanation_script(prompt, image_desc=None):
     - Optionally refer to this image content: {image_desc if image_desc else 'No image provided'}.
     Output as a JSON list of slides with keys 'title' and 'text'."""
     response = client.chat.completions.create(
-        model="chatgpt-4o-latest",
+        model="gpt-5.5",
         messages=[
             {"role": "system", "content": "You are a tutor creating educational video scripts."},
             {"role": "user", "content": base_prompt}
         ],
-        temperature=0.3
+        temperature=1
     )
     return json.loads(response.choices[0].message.content)
 
@@ -88,9 +88,9 @@ def create_slide_image(title, text):
         Only respond with valid Python code using matplotlib (and optionally numpy). Do not include explanations.
         """
         response = client.chat.completions.create(
-            model="chatgpt-4o-latest",
+            model="gpt-5.5",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.0
+            temperature=1
         )
         return response.choices[0].message.content
 
@@ -231,7 +231,7 @@ def run_explainer_ui():
         follow_up = st.text_input("Ask something related to the explanation above")
         if follow_up:
             response = client.chat.completions.create(
-                model="chatgpt-4o-latest",
+                model="gpt-5.5",
                 messages=[
                     {"role": "system", "content": "You are a STEM tutor helping clarify video topics."},
                     {"role": "user", "content": f"The topic was: {prompt}. {follow_up}"}
@@ -271,7 +271,7 @@ async def connect_to_openai_websocket(audio_data):
                 "model": "tts-1-hd",
                 "instructions": "You are a real-time tutor named Thuto who is knowledgable in in the CAPS curricullum in STEM subjects. Assist students as best as you can.",
                 "modalities": ["audio"],
-                "temperature": 0.2,
+                "temperature": 1,
             }
         }
         await ws.send(json.dumps(session_update))
@@ -460,7 +460,7 @@ def main():
     else:
         client = OpenAI(api_key=openai_api_key)
                 # LangChain LLM setup for ReAct Agent
-        llm = LangOpenAI(openai_api_key=openai_api_key, temperature=0.3)
+        llm = LangOpenAI(openai_api_key=openai_api_key, temperature=1)
 
         tools = [web_search]  # You can add more tools
 
@@ -500,7 +500,7 @@ def main():
             ], index=0)
             
             with st.popover("⚙️ Model parameters"):
-                model_temp = st.slider("Temperature", min_value=0.0, max_value=2.0, value=0.3, step=0.1)
+                model_temp = st.slider("Temperature", min_value=0, max_value=1.0, value=1, step=1)
 
             audio_response = st.toggle("Audio response", value=False)
             if audio_response:
