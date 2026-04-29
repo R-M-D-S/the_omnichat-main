@@ -500,7 +500,7 @@ def main():
             ], index=0)
             
             with st.popover("⚙️ Model parameters"):
-                model_temp = st.slider("Temperature", min_value=0, max_value=1.0, value=1, step=1)
+                model_temp = st.slider("Temperature", min_value=0.0, max_value=1.0, value=1.0, step=0.1)
 
             audio_response = st.toggle("Audio response", value=False)
             if audio_response:
